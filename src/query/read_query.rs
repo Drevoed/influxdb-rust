@@ -3,57 +3,50 @@
 //! Can only be instantiated by using InfluxDbQuery::raw_read_query
 
 use crate::error::InfluxDbError;
-use crate::query::{InfluxDbQuery, QueryType, ValidQuery};
+use crate::query::{InfluxDbQuery, ValidQuery};
 
 pub struct InfluxDbReadQuery {
     queries: Vec<String>,
 }
 
 impl InfluxDbReadQuery {
+    pub(crate) fn build(&self) -> Result<ValidQuery, InfluxDbError> {
+        Ok(ValidQuery(self.queries.join(";")))
+    }
     /// Creates a new [`InfluxDbReadQuery`]
     pub fn new<S>(query: S) -> Self
     where
-        S: ToString,
+        S: Into<String>,
     {
         InfluxDbReadQuery {
-            queries: vec![query.to_string()],
+            queries: vec![query.into()],
         }
     }
 
     /// Adds a query to the [`InfluxDbReadQuery`]
     pub fn add<S>(mut self, query: S) -> Self
     where
-        S: ToString,
+        S: Into<String>,
     {
-        self.queries.push(query.to_string());
+        self.queries.push(query.into());
         self
-    }
-}
-
-impl InfluxDbQuery for InfluxDbReadQuery {
-    fn build(&self) -> Result<ValidQuery, InfluxDbError> {
-        Ok(ValidQuery(self.queries.join(";")))
-    }
-
-    fn get_type(&self) -> QueryType {
-        QueryType::ReadQuery
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::query::{InfluxDbQuery, QueryType};
+    use crate::query::{create_raw_read_query, InfluxDbQuery, QueryType};
 
     #[test]
     fn test_read_builder_single_query() {
-        let query = InfluxDbQuery::raw_read_query("SELECT * FROM aachen").build();
+        let query = create_raw_read_query("SELECT * FROM aachen").build();
 
         assert_eq!(query.unwrap(), "SELECT * FROM aachen");
     }
 
     #[test]
     fn test_read_builder_multi_query() {
-        let query = InfluxDbQuery::raw_read_query("SELECT * FROM aachen")
+        let query = create_raw_read_query("SELECT * FROM aachen")
             .add("SELECT * FROM cologne")
             .build();
 
@@ -62,7 +55,7 @@ mod tests {
 
     #[test]
     fn test_correct_query_type() {
-        let query = InfluxDbQuery::raw_read_query("SELECT * FROM aachen");
+        let query = create_raw_read_query("SELECT * FROM aachen");
 
         assert_eq!(query.get_type(), QueryType::ReadQuery);
     }

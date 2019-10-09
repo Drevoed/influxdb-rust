@@ -4,16 +4,16 @@
 //! # Examples
 //!
 //! ```rust
-//! use influxdb::query::{InfluxDbQuery, Timestamp};
+//! use influxdb::query::{InfluxDbQuery, Timestamp, create_write_query, create_raw_read_query};
 //!
-//! let write_query = InfluxDbQuery::write_query(Timestamp::NOW, "measurement")
+//! let write_query = create_write_query(Timestamp::NOW, "measurement")
 //!     .add_field("field1", 5)
 //!     .add_tag("author", "Gero")
 //!     .build();
 //!
 //! assert!(write_query.is_ok());
 //!
-//! let read_query = InfluxDbQuery::raw_read_query("SELECT * FROM weather")
+//! let read_query = create_raw_read_query("SELECT * FROM weather")
 //!     .build();
 //!
 //! assert!(read_query.is_ok());
@@ -27,6 +27,38 @@ use std::fmt;
 use crate::error::InfluxDbError;
 use crate::query::read_query::InfluxDbReadQuery;
 use crate::query::write_query::InfluxDbWriteQuery;
+
+/// Returns a [`InfluxDbWriteQuery`](crate::query::write_query::InfluxDbWriteQuery) builder.
+///
+/// # Examples
+///
+/// ```rust
+/// use influxdb::query::{create_write_query, Timestamp};
+///
+/// let _ = create_write_query(Timestamp::NOW, "measurement"); // Is of type [`InfluxDbWriteQuery`](crate::query::write_query::InfluxDbWriteQuery)
+/// ```
+pub fn create_write_query<S>(timestamp: Timestamp, measurement: S) -> InfluxDbWriteQuery
+where
+    S: Into<String>,
+{
+    InfluxDbWriteQuery::new(timestamp, measurement)
+}
+
+/// Returns a [`InfluxDbReadQuery`](crate::query::read_query::InfluxDbReadQuery) builder.
+///
+/// # Examples
+///
+/// ```rust
+/// use influxdb::query::create_raw_read_query;
+///
+/// let _ = create_raw_read_query("SELECT * FROM weather"); // Is of type [`InfluxDbReadQuery`](crate::query::read_query::InfluxDbReadQuery)
+/// ```
+pub fn create_raw_read_query<S>(read_query: S) -> InfluxDbReadQuery
+where
+    S: Into<String>,
+{
+    InfluxDbReadQuery::new(read_query)
+}
 
 #[derive(PartialEq)]
 pub enum Timestamp {
@@ -50,58 +82,20 @@ impl fmt::Display for Timestamp {
     }
 }
 
-pub trait InfluxDbQuery {
-    /// Builds valid InfluxSQL which can be run against the Database.
-    /// In case no fields have been specified, it will return an error,
-    /// as that is invalid InfluxSQL syntax.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use influxdb::query::{InfluxDbQuery, Timestamp};
-    ///
-    /// let invalid_query = InfluxDbQuery::write_query(Timestamp::NOW, "measurement").build();
-    /// assert!(invalid_query.is_err());
-    ///
-    /// let valid_query = InfluxDbQuery::write_query(Timestamp::NOW, "measurement").add_field("myfield1", 11).build();
-    /// assert!(valid_query.is_ok());
-    /// ```
-    fn build(&self) -> Result<ValidQuery, InfluxDbError>;
-
-    fn get_type(&self) -> QueryType;
+/// Internal Enum used to decide if a `POST` or `GET` request should be sent to InfluxDB. See [InfluxDB Docs](https://docs.influxdata.com/influxdb/v1.7/tools/api/#query-http-endpoint).
+pub enum InfluxDbQuery {
+    Write(InfluxDbWriteQuery),
+    Read(InfluxDbReadQuery),
 }
 
 impl InfluxDbQuery {
-    /// Returns a [`InfluxDbWriteQuery`](crate::query::write_query::InfluxDbWriteQuery) builder.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use influxdb::query::{InfluxDbQuery, Timestamp};
-    ///
-    /// InfluxDbQuery::write_query(Timestamp::NOW, "measurement"); // Is of type [`InfluxDbWriteQuery`](crate::query::write_query::InfluxDbWriteQuery)
-    /// ```
-    pub fn write_query<S>(timestamp: Timestamp, measurement: S) -> InfluxDbWriteQuery
-    where
-        S: ToString,
-    {
-        InfluxDbWriteQuery::new(timestamp, measurement)
-    }
+    pub fn build(&self) -> Result<ValidQuery, InfluxDbError> {
+        use InfluxDbQuery::*;
 
-    /// Returns a [`InfluxDbReadQuery`](crate::query::read_query::InfluxDbReadQuery) builder.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use influxdb::query::InfluxDbQuery;
-    ///
-    /// InfluxDbQuery::raw_read_query("SELECT * FROM weather"); // Is of type [`InfluxDbReadQuery`](crate::query::read_query::InfluxDbReadQuery)
-    /// ```
-    pub fn raw_read_query<S>(read_query: S) -> InfluxDbReadQuery
-    where
-        S: ToString,
-    {
-        InfluxDbReadQuery::new(read_query)
+        match self {
+            Write(write_query) => write_query.build(),
+            Read(read_query) => read_query.build(),
+        }
     }
 }
 
@@ -115,10 +109,10 @@ impl ValidQuery {
 }
 impl<T> From<T> for ValidQuery
 where
-    T: ToString,
+    T: Into<String>,
 {
     fn from(string: T) -> Self {
-        Self(string.to_string())
+        Self(string.into())
     }
 }
 impl PartialEq<String> for ValidQuery {
@@ -132,13 +126,6 @@ impl PartialEq<&str> for ValidQuery {
     }
 }
 
-/// Internal Enum used to decide if a `POST` or `GET` request should be sent to InfluxDB. See [InfluxDB Docs](https://docs.influxdata.com/influxdb/v1.7/tools/api/#query-http-endpoint).
-#[derive(PartialEq, Debug)]
-pub enum QueryType {
-    ReadQuery,
-    WriteQuery,
-}
-
 #[cfg(test)]
 mod tests {
     use crate::query::{Timestamp, ValidQuery};
@@ -150,10 +137,7 @@ mod tests {
 
     #[test]
     fn test_equality_string() {
-        assert_eq!(
-            ValidQuery::from(String::from("hello")),
-            String::from("hello")
-        );
+        assert_eq!(ValidQuery::from("hello"), String::from("hello"));
     }
 
     #[test]
